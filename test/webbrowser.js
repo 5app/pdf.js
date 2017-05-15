@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/*jslint node: true */
+/* eslint-disable object-shorthand */
 
 'use strict';
 
@@ -229,7 +229,8 @@ ChromiumBrowser.prototype = Object.create(WebBrowser.prototype);
 ChromiumBrowser.prototype.buildArguments = function (url) {
   var profileDir = this.getProfileDir();
   return ['--user-data-dir=' + profileDir,
-    '--no-first-run', '--disable-sync', url];
+    '--no-first-run', '--disable-sync',
+    '--no-default-browser-check', url];
 };
 
 WebBrowser.create = function (desc) {

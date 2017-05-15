@@ -271,8 +271,6 @@ var ChunkedStream = (function ChunkedStreamClosure() {
       subStream.dict = dict;
       return subStream;
     },
-
-    isStream: true
   };
 
   return ChunkedStream;
@@ -322,7 +320,7 @@ var ChunkedStreamManager = (function ChunkedStreamManagerClosure() {
               chunks.push(data);
               loaded += arrayByteLength(data);
               if (rangeReader.isStreamingSupported) {
-                manager.onProgress({loaded: loaded});
+                manager.onProgress({ loaded, });
               }
               rangeReader.read().then(readChunk, reject);
               return;
@@ -336,12 +334,12 @@ var ChunkedStreamManager = (function ChunkedStreamManagerClosure() {
         };
         rangeReader.read().then(readChunk, reject);
       });
-      promise.then(function (data) {
+      promise.then((data) => {
         if (this.aborted) {
           return; // ignoring any data after abort
         }
-        this.onReceiveData({chunk: data, begin: begin});
-      }.bind(this));
+        this.onReceiveData({ chunk: data, begin, });
+      });
       // TODO check errors
     },
 
@@ -432,7 +430,9 @@ var ChunkedStreamManager = (function ChunkedStreamManagerClosure() {
         }
       }
 
-      chunksToRequest.sort(function(a, b) { return a - b; });
+      chunksToRequest.sort(function(a, b) {
+        return a - b;
+      });
       return this._requestChunks(chunksToRequest);
     },
 
@@ -450,12 +450,12 @@ var ChunkedStreamManager = (function ChunkedStreamManagerClosure() {
         }
 
         if (prevChunk >= 0 && prevChunk + 1 !== chunk) {
-          groupedChunks.push({ beginChunk: beginChunk,
+          groupedChunks.push({ beginChunk,
                                endChunk: prevChunk + 1 });
           beginChunk = chunk;
         }
         if (i + 1 === chunks.length) {
-          groupedChunks.push({ beginChunk: beginChunk,
+          groupedChunks.push({ beginChunk,
                                endChunk: chunk + 1 });
         }
 
@@ -568,7 +568,7 @@ var ChunkedStreamManager = (function ChunkedStreamManagerClosure() {
       if (this.pdfNetworkStream) {
         this.pdfNetworkStream.cancelAllRequests('abort');
       }
-      for(var requestId in this.promisesByRequest) {
+      for (var requestId in this.promisesByRequest) {
         var capability = this.promisesByRequest[requestId];
         capability.reject(new Error('Request was aborted'));
       }

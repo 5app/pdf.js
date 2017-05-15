@@ -34,13 +34,14 @@
 var Util = sharedUtil.Util;
 var error = sharedUtil.error;
 var info = sharedUtil.info;
+var isInt = sharedUtil.isInt;
 var isArray = sharedUtil.isArray;
 var createObjectURL = sharedUtil.createObjectURL;
 var shadow = sharedUtil.shadow;
-var warn = sharedUtil.warn;
 var isSpace = sharedUtil.isSpace;
 var Dict = corePrimitives.Dict;
 var isDict = corePrimitives.isDict;
+var isStream = corePrimitives.isStream;
 var Jbig2Image = coreJbig2.Jbig2Image;
 var JpegImage = coreJpg.JpegImage;
 var JpxImage = coreJpx.JpxImage;
@@ -127,7 +128,6 @@ var Stream = (function StreamClosure() {
     makeSubStream: function Stream_makeSubStream(start, length, dict) {
       return new Stream(this.bytes.buffer, start, length, dict);
     },
-    isStream: true
   };
 
   return Stream;
@@ -737,15 +737,16 @@ var PredictorStream = (function PredictorStreamClosure() {
     var pos = bufferLength;
     var i;
 
-    if (bits === 1) {
+    if (bits === 1 && colors === 1) {
+      // Optimized version of the loop in the "else"-branch
+      // for 1 bit-per-component and 1 color TIFF images.
       for (i = 0; i < rowBytes; ++i) {
-        var c = rawBytes[i];
-        inbuf = (inbuf << 8) | c;
-        // bitwise addition is exclusive or
-        // first shift inbuf and then add
-        buffer[pos++] = (c ^ (inbuf >> colors)) & 0xFF;
-        // truncate inbuf (assumes colors < 16)
-        inbuf &= 0xFFFF;
+        var c = rawBytes[i] ^ inbuf;
+        c ^= c >> 1;
+        c ^= c >> 2;
+        c ^= c >> 4;
+        inbuf = (c & 1) << 7;
+        buffer[pos++] = c;
       }
     } else if (bits === 8) {
       for (i = 0; i < colors; ++i) {
@@ -891,7 +892,7 @@ var PredictorStream = (function PredictorStreamClosure() {
  * DecodeStreams.
  */
 var JpegStream = (function JpegStreamClosure() {
-  function JpegStream(stream, maybeLength, dict, xref) {
+  function JpegStream(stream, maybeLength, dict, params) {
     // Some images may contain 'junk' before the SOI (start-of-image) marker.
     // Note: this seems to mainly affect inline images.
     var ch;
@@ -904,6 +905,7 @@ var JpegStream = (function JpegStreamClosure() {
     this.stream = stream;
     this.maybeLength = maybeLength;
     this.dict = dict;
+    this.params = params;
 
     DecodeStream.call(this, maybeLength);
   }
@@ -922,38 +924,41 @@ var JpegStream = (function JpegStreamClosure() {
     if (this.bufferLength) {
       return;
     }
-    try {
-      var jpegImage = new JpegImage();
+    var jpegImage = new JpegImage();
 
-      // checking if values needs to be transformed before conversion
-      if (this.forceRGB && this.dict && isArray(this.dict.get('Decode'))) {
-        var decodeArr = this.dict.getArray('Decode');
-        var bitsPerComponent = this.dict.get('BitsPerComponent') || 8;
-        var decodeArrLength = decodeArr.length;
-        var transform = new Int32Array(decodeArrLength);
-        var transformNeeded = false;
-        var maxValue = (1 << bitsPerComponent) - 1;
-        for (var i = 0; i < decodeArrLength; i += 2) {
-          transform[i] = ((decodeArr[i + 1] - decodeArr[i]) * 256) | 0;
-          transform[i + 1] = (decodeArr[i] * maxValue) | 0;
-          if (transform[i] !== 256 || transform[i + 1] !== 0) {
-            transformNeeded = true;
-          }
-        }
-        if (transformNeeded) {
-          jpegImage.decodeTransform = transform;
+    // Checking if values need to be transformed before conversion.
+    var decodeArr = this.dict.getArray('Decode', 'D');
+    if (this.forceRGB && isArray(decodeArr)) {
+      var bitsPerComponent = this.dict.get('BitsPerComponent') || 8;
+      var decodeArrLength = decodeArr.length;
+      var transform = new Int32Array(decodeArrLength);
+      var transformNeeded = false;
+      var maxValue = (1 << bitsPerComponent) - 1;
+      for (var i = 0; i < decodeArrLength; i += 2) {
+        transform[i] = ((decodeArr[i + 1] - decodeArr[i]) * 256) | 0;
+        transform[i + 1] = (decodeArr[i] * maxValue) | 0;
+        if (transform[i] !== 256 || transform[i + 1] !== 0) {
+          transformNeeded = true;
         }
       }
-
-      jpegImage.parse(this.bytes);
-      var data = jpegImage.getData(this.drawWidth, this.drawHeight,
-                                   this.forceRGB);
-      this.buffer = data;
-      this.bufferLength = data.length;
-      this.eof = true;
-    } catch (e) {
-      error('JPEG error: ' + e);
+      if (transformNeeded) {
+        jpegImage.decodeTransform = transform;
+      }
     }
+    // Fetching the 'ColorTransform' entry, if it exists.
+    if (isDict(this.params)) {
+      var colorTransform = this.params.get('ColorTransform');
+      if (isInt(colorTransform)) {
+        jpegImage.colorTransform = colorTransform;
+      }
+    }
+
+    jpegImage.parse(this.bytes);
+    var data = jpegImage.getData(this.drawWidth, this.drawHeight,
+                                 this.forceRGB);
+    this.buffer = data;
+    this.bufferLength = data.length;
+    this.eof = true;
   };
 
   JpegStream.prototype.getBytes = function JpegStream_getBytes(length) {
@@ -973,10 +978,11 @@ var JpegStream = (function JpegStreamClosure() {
  * the stream behaves like all the other DecodeStreams.
  */
 var JpxStream = (function JpxStreamClosure() {
-  function JpxStream(stream, maybeLength, dict) {
+  function JpxStream(stream, maybeLength, dict, params) {
     this.stream = stream;
     this.maybeLength = maybeLength;
     this.dict = dict;
+    this.params = params;
 
     DecodeStream.call(this, maybeLength);
   }
@@ -1042,10 +1048,11 @@ var JpxStream = (function JpxStreamClosure() {
  * the stream behaves like all the other DecodeStreams.
  */
 var Jbig2Stream = (function Jbig2StreamClosure() {
-  function Jbig2Stream(stream, maybeLength, dict) {
+  function Jbig2Stream(stream, maybeLength, dict, params) {
     this.stream = stream;
     this.maybeLength = maybeLength;
     this.dict = dict;
+    this.params = params;
 
     DecodeStream.call(this, maybeLength);
   }
@@ -1068,21 +1075,12 @@ var Jbig2Stream = (function Jbig2StreamClosure() {
     var jbig2Image = new Jbig2Image();
 
     var chunks = [];
-    var decodeParams = this.dict.getArray('DecodeParms');
-
-    // According to the PDF specification, DecodeParms can be either
-    // a dictionary, or an array whose elements are dictionaries.
-    if (isArray(decodeParams)) {
-      if (decodeParams.length > 1) {
-        warn('JBIG2 - \'DecodeParms\' array with multiple elements ' +
-             'not supported.');
+    if (isDict(this.params)) {
+      var globalsStream = this.params.get('JBIG2Globals');
+      if (isStream(globalsStream)) {
+        var globals = globalsStream.getBytes();
+        chunks.push({data: globals, start: 0, end: globals.length});
       }
-      decodeParams = decodeParams[0];
-    }
-    if (decodeParams && decodeParams.has('JBIG2Globals')) {
-      var globalsStream = decodeParams.get('JBIG2Globals');
-      var globals = globalsStream.getBytes();
-      chunks.push({data: globals, start: 0, end: globals.length});
     }
     chunks.push({data: this.bytes, start: 0, end: this.bytes.length});
     var data = jbig2Image.parseChunks(chunks);
@@ -2346,7 +2344,7 @@ var LZWStream = (function LZWStreamClosure() {
 
     var maxLzwDictionarySize = 4096;
     var lzwState = {
-      earlyChange: earlyChange,
+      earlyChange,
       codeLength: 9,
       nextCode: 258,
       dictionaryValues: new Uint8Array(maxLzwDictionarySize),

@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/*jslint node: true */
+/* eslint-disable object-shorthand */
 
 'use strict';
 

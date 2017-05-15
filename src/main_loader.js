@@ -44,23 +44,28 @@
   exports.version = displayAPI.version;
   exports.getDocument = displayAPI.getDocument;
   exports.PDFDataRangeTransport = displayAPI.PDFDataRangeTransport;
+  exports.LoopbackPort = displayAPI.LoopbackPort;
   exports.PDFWorker = displayAPI.PDFWorker;
   exports.renderTextLayer = displayTextLayer.renderTextLayer;
   exports.AnnotationLayer = displayAnnotationLayer.AnnotationLayer;
   exports.CustomStyle = displayDOMUtils.CustomStyle;
+  exports.createPromiseCapability = sharedUtil.createPromiseCapability;
   exports.PasswordResponses = sharedUtil.PasswordResponses;
   exports.InvalidPDFException = sharedUtil.InvalidPDFException;
   exports.MissingPDFException = sharedUtil.MissingPDFException;
   exports.SVGGraphics = displaySVG.SVGGraphics;
+  exports.NativeImageDecoding = sharedUtil.NativeImageDecoding;
   exports.UnexpectedResponseException = sharedUtil.UnexpectedResponseException;
   exports.OPS = sharedUtil.OPS;
   exports.UNSUPPORTED_FEATURES = sharedUtil.UNSUPPORTED_FEATURES;
-  exports.isValidUrl = sharedUtil.isValidUrl;
+  exports.isValidUrl = displayDOMUtils.isValidUrl;
+  exports.createValidAbsoluteUrl = sharedUtil.createValidAbsoluteUrl;
   exports.createObjectURL = sharedUtil.createObjectURL;
   exports.removeNullCharacters = sharedUtil.removeNullCharacters;
   exports.shadow = sharedUtil.shadow;
   exports.createBlob = sharedUtil.createBlob;
+  exports.RenderingCancelledException =
+    displayDOMUtils.RenderingCancelledException;
   exports.getFilenameFromUrl = displayDOMUtils.getFilenameFromUrl;
   exports.addLinkAttributes = displayDOMUtils.addLinkAttributes;
-
 }));

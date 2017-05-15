@@ -1,15 +1,31 @@
-/* globals jasmine, expect, it, describe, beforeEach, isArray, StringStream,
-           PostScriptParser, PostScriptLexer, PostScriptEvaluator,
-           PostScriptCompiler*/
+/* Copyright 2017 Mozilla Foundation
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
-'use strict';
+import {
+  PostScriptCompiler, PostScriptEvaluator
+} from '../../src/core/function';
+import { PostScriptLexer, PostScriptParser } from '../../src/core/ps_parser';
+import { isArray } from '../../src/shared/util';
+import { StringStream } from '../../src/core/stream';
 
 describe('function', function() {
   beforeEach(function() {
     jasmine.addMatchers({
-      toMatchArray: function(util, customEqualityTesters) {
+      toMatchArray(util, customEqualityTesters) {
         return {
-          compare: function (actual, expected) {
+          compare(actual, expected) {
             var result = {};
             if (actual.length !== expected.length) {
               result.pass = false;
@@ -90,8 +106,9 @@ describe('function', function() {
       expect(program).toMatchArray(expectedProgram);
     });
     it('handles missing brackets', function() {
-      expect(function() { parse('{'); }).toThrow(
-        new Error('Unexpected symbol: found undefined expected 1.'));
+      expect(function() {
+        parse('{');
+      }).toThrow(new Error('Unexpected symbol: found undefined expected 1.'));
     });
     it('handles junk after the end', function() {
       var number = 3.3;
@@ -433,7 +450,7 @@ describe('function', function() {
         expect(compiledCode).toBeNull();
       } else {
         expect(compiledCode).not.toBeNull();
-        /*jshint -W054 */
+        // eslint-disable-next-line no-new-func
         var fn = new Function('src', 'srcOffset', 'dest', 'destOffset',
                               compiledCode);
         for (var i = 0; i < samples.length; i++) {

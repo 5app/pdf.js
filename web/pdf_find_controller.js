@@ -13,20 +13,8 @@
  * limitations under the License.
  */
 
-'use strict';
-
-(function (root, factory) {
-  if (typeof define === 'function' && define.amd) {
-    define('pdfjs-web/pdf_find_controller', ['exports', 'pdfjs-web/ui_utils'],
-      factory);
-  } else if (typeof exports !== 'undefined') {
-    factory(exports, require('./ui_utils.js'));
-  } else {
-    factory((root.pdfjsWebPDFFindController = {}), root.pdfjsWebUIUtils);
-  }
-}(this, function (exports, uiUtils) {
-
-var scrollIntoView = uiUtils.scrollIntoView;
+import { createPromiseCapability } from './pdfjs';
+import { scrollIntoView } from './ui_utils';
 
 var FindStates = {
   FIND_FOUND: 0,
@@ -94,9 +82,9 @@ var PDFFindController = (function PDFFindControllerClosure() {
       this.dirtyMatch = false;
       this.findTimeout = null;
 
-      this.firstPagePromise = new Promise(function (resolve) {
+      this._firstPagePromise = new Promise((resolve) => {
         this.resolveFirstPage = resolve;
-      }.bind(this));
+      });
     },
 
     normalize: function PDFFindController_normalize(text) {
@@ -244,43 +232,32 @@ var PDFFindController = (function PDFFindControllerClosure() {
       }
     },
 
-    extractText: function PDFFindController_extractText() {
+    extractText() {
       if (this.startedTextExtraction) {
         return;
       }
       this.startedTextExtraction = true;
+      this.pageContents.length = 0;
 
-      this.pageContents = [];
-      var extractTextPromisesResolves = [];
-      var numPages = this.pdfViewer.pagesCount;
-      for (var i = 0; i < numPages; i++) {
-        this.extractTextPromises.push(new Promise(function (resolve) {
-          extractTextPromisesResolves.push(resolve);
-        }));
-      }
+      let promise = Promise.resolve();
+      for (let i = 0, ii = this.pdfViewer.pagesCount; i < ii; i++) {
+        let extractTextCapability = createPromiseCapability();
+        this.extractTextPromises[i] = extractTextCapability.promise;
 
-      var self = this;
-      function extractPageText(pageIndex) {
-        self.pdfViewer.getPageTextContent(pageIndex).then(
-          function textContentResolved(textContent) {
-            var textItems = textContent.items;
-            var str = [];
+        promise = promise.then(() => {
+          return this.pdfViewer.getPageTextContent(i).then((textContent) => {
+            let textItems = textContent.items;
+            let strBuf = [];
 
-            for (var i = 0, len = textItems.length; i < len; i++) {
-              str.push(textItems[i].str);
+            for (let j = 0, jj = textItems.length; j < jj; j++) {
+              strBuf.push(textItems[j].str);
             }
-
             // Store the pageContent as a string.
-            self.pageContents.push(str.join(''));
-
-            extractTextPromisesResolves[pageIndex](pageIndex);
-            if ((pageIndex + 1) < self.pdfViewer.pagesCount) {
-              extractPageText(pageIndex + 1);
-            }
-          }
-        );
+            this.pageContents[i] = strBuf.join('');
+            extractTextCapability.resolve(i);
+          });
+        });
       }
-      extractPageText(0);
     },
 
     executeCommand: function PDFFindController_executeCommand(cmd, state) {
@@ -290,7 +267,7 @@ var PDFFindController = (function PDFFindControllerClosure() {
       this.state = state;
       this.updateUIState(FindStates.FIND_PENDING);
 
-      this.firstPagePromise.then(function() {
+      this._firstPagePromise.then(() => {
         this.extractText();
 
         clearTimeout(this.findTimeout);
@@ -300,7 +277,7 @@ var PDFFindController = (function PDFFindControllerClosure() {
         } else {
           this.nextMatch();
         }
-      }.bind(this));
+      });
     },
 
     updatePage: function PDFFindController_updatePage(index) {
@@ -308,7 +285,7 @@ var PDFFindController = (function PDFFindControllerClosure() {
         // If the page is selected, scroll the page into view, which triggers
         // rendering the page, which adds the textLayer. Once the textLayer is
         // build, it will scroll onto the selected match.
-        this.pdfViewer.scrollPageIntoView(index + 1);
+        this.pdfViewer.currentPageNumber = index + 1;
       }
 
       var page = this.pdfViewer.getPageView(index);
@@ -335,18 +312,17 @@ var PDFFindController = (function PDFFindControllerClosure() {
         this.pageMatches = [];
         this.matchCount = 0;
         this.pageMatchesLength = null;
-        var self = this;
 
-        for (var i = 0; i < numPages; i++) {
+        for (let i = 0; i < numPages; i++) {
           // Wipe out any previous highlighted matches.
           this.updatePage(i);
 
           // As soon as the text is extracted start finding the matches.
           if (!(i in this.pendingFindMatches)) {
             this.pendingFindMatches[i] = true;
-            this.extractTextPromises[i].then(function(pageIdx) {
-              delete self.pendingFindMatches[pageIdx];
-              self.calcFindMatch(pageIdx);
+            this.extractTextPromises[i].then((pageIdx) => {
+              delete this.pendingFindMatches[pageIdx];
+              this.calcFindMatch(pageIdx);
             });
           }
         }
@@ -399,22 +375,21 @@ var PDFFindController = (function PDFFindControllerClosure() {
         offset.matchIdx = (previous ? numMatches - 1 : 0);
         this.updateMatch(true);
         return true;
-      } else {
-        // No matches, so attempt to search the next page.
-        this.advanceOffsetPage(previous);
-        if (offset.wrapped) {
-          offset.matchIdx = null;
-          if (this.pagesToSearch < 0) {
-            // No point in wrapping again, there were no matches.
-            this.updateMatch(false);
-            // while matches were not found, searching for a page
-            // with matches should nevertheless halt.
-            return true;
-          }
-        }
-        // Matches were not found (and searching is not done).
-        return false;
       }
+      // No matches, so attempt to search the next page.
+      this.advanceOffsetPage(previous);
+      if (offset.wrapped) {
+        offset.matchIdx = null;
+        if (this.pagesToSearch < 0) {
+          // No point in wrapping again, there were no matches.
+          this.updateMatch(false);
+          // while matches were not found, searching for a page
+          // with matches should nevertheless halt.
+          return true;
+        }
+      }
+      // Matches were not found (and searching is not done).
+      return false;
     },
 
     /**
@@ -506,6 +481,7 @@ var PDFFindController = (function PDFFindControllerClosure() {
   return PDFFindController;
 })();
 
-exports.FindStates = FindStates;
-exports.PDFFindController = PDFFindController;
-}));
+export {
+  FindStates,
+  PDFFindController,
+};

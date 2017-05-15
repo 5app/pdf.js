@@ -39,12 +39,16 @@ function writeToFile(svgdump, pageNum) {
 function getFileNameFromPath(path) {
   var index = path.lastIndexOf('/');
   var extIndex = path.lastIndexOf('.');
-  return path.substring(index , extIndex);
+  return path.substring(index, extIndex);
 }
 
 // Will be using promises to load document, pages and misc data instead of
 // callback.
-pdfjsLib.getDocument(data).then(function (doc) {
+pdfjsLib.getDocument({
+  data: data,
+  // Try to export JPEG images directly if they don't need any further processing.
+  nativeImageDecoderSupport: pdfjsLib.NativeImageDecoding.DISPLAY
+}).then(function (doc) {
   var numPages = doc.numPages;
   console.log('# Document Loaded');
   console.log('Number of Pages: ' + numPages);

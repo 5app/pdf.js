@@ -13,25 +13,10 @@
  * limitations under the License.
  */
 
-'use strict';
-
-(function (root, factory) {
-  if (typeof define === 'function' && define.amd) {
-    define('pdfjs-web/pdf_thumbnail_viewer', ['exports',
-      'pdfjs-web/ui_utils', 'pdfjs-web/pdf_thumbnail_view'], factory);
-  } else if (typeof exports !== 'undefined') {
-    factory(exports, require('./ui_utils.js'),
-      require('./pdf_thumbnail_view.js'));
-  } else {
-    factory((root.pdfjsWebPDFThumbnailViewer = {}), root.pdfjsWebUIUtils,
-      root.pdfjsWebPDFThumbnailView);
-  }
-}(this, function (exports, uiUtils, pdfThumbnailView) {
-
-var watchScroll = uiUtils.watchScroll;
-var getVisibleElements = uiUtils.getVisibleElements;
-var scrollIntoView = uiUtils.scrollIntoView;
-var PDFThumbnailView = pdfThumbnailView.PDFThumbnailView;
+import {
+  getVisibleElements, scrollIntoView, watchScroll
+} from './ui_utils';
+import { PDFThumbnailView } from './pdf_thumbnail_view';
 
 var THUMBNAIL_SCROLL_MARGIN = -19;
 
@@ -87,7 +72,8 @@ var PDFThumbnailViewer = (function PDFThumbnailViewerClosure() {
       if (selected) {
         selected.classList.remove('selected');
       }
-      var thumbnail = document.getElementById('thumbnailContainer' + page);
+      var thumbnail = document.querySelector(
+        'div.thumbnail[data-page-number="' + page + '"]');
       if (thumbnail) {
         thumbnail.classList.add('selected');
       }
@@ -133,17 +119,17 @@ var PDFThumbnailViewer = (function PDFThumbnailViewerClosure() {
      */
     _resetView: function PDFThumbnailViewer_resetView() {
       this.thumbnails = [];
+      this._pageLabels = null;
       this._pagesRotation = 0;
       this._pagesRequests = [];
+
+      // Remove the thumbnails from the DOM.
+      this.container.textContent = '';
     },
 
     setDocument: function PDFThumbnailViewer_setDocument(pdfDocument) {
       if (this.pdfDocument) {
-        // cleanup of the elements and views
-        var thumbsView = this.container;
-        while (thumbsView.hasChildNodes()) {
-          thumbsView.removeChild(thumbsView.lastChild);
-        }
+        this._cancelRendering();
         this._resetView();
       }
 
@@ -152,10 +138,10 @@ var PDFThumbnailViewer = (function PDFThumbnailViewerClosure() {
         return Promise.resolve();
       }
 
-      return pdfDocument.getPage(1).then(function (firstPage) {
+      return pdfDocument.getPage(1).then((firstPage) => {
         var pagesCount = pdfDocument.numPages;
         var viewport = firstPage.getViewport(1.0);
-        for (var pageNum = 1; pageNum <= pagesCount; ++pageNum) {
+        for (let pageNum = 1; pageNum <= pagesCount; ++pageNum) {
           var thumbnail = new PDFThumbnailView({
             container: this.container,
             id: pageNum,
@@ -166,7 +152,42 @@ var PDFThumbnailViewer = (function PDFThumbnailViewerClosure() {
           });
           this.thumbnails.push(thumbnail);
         }
-      }.bind(this));
+      });
+    },
+
+    /**
+     * @private
+     */
+    _cancelRendering: function PDFThumbnailViewer_cancelRendering() {
+      for (var i = 0, ii = this.thumbnails.length; i < ii; i++) {
+        if (this.thumbnails[i]) {
+          this.thumbnails[i].cancelRendering();
+        }
+      }
+    },
+
+    /**
+     * @param {Array|null} labels
+     */
+    setPageLabels: function PDFThumbnailViewer_setPageLabels(labels) {
+      if (!this.pdfDocument) {
+        return;
+      }
+      if (!labels) {
+        this._pageLabels = null;
+      } else if (!(labels instanceof Array &&
+                   this.pdfDocument.numPages === labels.length)) {
+        this._pageLabels = null;
+        console.error('PDFThumbnailViewer_setPageLabels: Invalid page labels.');
+      } else {
+        this._pageLabels = labels;
+      }
+      // Update all the `PDFThumbnailView` instances.
+      for (var i = 0, ii = this.thumbnails.length; i < ii; i++) {
+        var thumbnailView = this.thumbnails[i];
+        var label = this._pageLabels && this._pageLabels[i];
+        thumbnailView.setPageLabel(label);
+      }
     },
 
     /**
@@ -174,8 +195,7 @@ var PDFThumbnailViewer = (function PDFThumbnailViewerClosure() {
      * @returns {PDFPage}
      * @private
      */
-    _ensurePdfPageLoaded:
-        function PDFThumbnailViewer_ensurePdfPageLoaded(thumbView) {
+    _ensurePdfPageLoaded(thumbView) {
       if (thumbView.pdfPage) {
         return Promise.resolve(thumbView.pdfPage);
       }
@@ -183,25 +203,24 @@ var PDFThumbnailViewer = (function PDFThumbnailViewerClosure() {
       if (this._pagesRequests[pageNumber]) {
         return this._pagesRequests[pageNumber];
       }
-      var promise = this.pdfDocument.getPage(pageNumber).then(
-        function (pdfPage) {
-          thumbView.setPdfPage(pdfPage);
-          this._pagesRequests[pageNumber] = null;
-          return pdfPage;
-        }.bind(this));
+      var promise = this.pdfDocument.getPage(pageNumber).then((pdfPage) => {
+        thumbView.setPdfPage(pdfPage);
+        this._pagesRequests[pageNumber] = null;
+        return pdfPage;
+      });
       this._pagesRequests[pageNumber] = promise;
       return promise;
     },
 
-    forceRendering: function () {
+    forceRendering() {
       var visibleThumbs = this._getVisibleThumbs();
       var thumbView = this.renderingQueue.getHighestPriority(visibleThumbs,
                                                              this.thumbnails,
                                                              this.scroll.down);
       if (thumbView) {
-        this._ensurePdfPageLoaded(thumbView).then(function () {
+        this._ensurePdfPageLoaded(thumbView).then(() => {
           this.renderingQueue.renderView(thumbView);
-        }.bind(this));
+        });
         return true;
       }
       return false;
@@ -211,5 +230,6 @@ var PDFThumbnailViewer = (function PDFThumbnailViewerClosure() {
   return PDFThumbnailViewer;
 })();
 
-exports.PDFThumbnailViewer = PDFThumbnailViewer;
-}));
+export {
+  PDFThumbnailViewer,
+};

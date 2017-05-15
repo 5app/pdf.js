@@ -13,29 +13,25 @@
  * limitations under the License.
  */
 
-// NOTE: Be careful what goes in this file, as it is also used from the context
-// of the addon. So using warn/error in here will break the addon.
-
 'use strict';
 
+(function (root, factory) {
+  if (typeof define === 'function' && define.amd) {
+    define('pdfjs/core/network', ['exports', 'pdfjs/shared/util',
+      'pdfjs/core/worker'], factory);
+  } else if (typeof exports !== 'undefined') {
+    factory(exports, require('../shared/util.js'), require('./worker.js'));
+  } else {
+    factory((root.pdfjsCoreNetwork = {}), root.pdfjsSharedUtil,
+      root.pdfjsCoreWorker);
+  }
+}(this, function (exports, sharedUtil, coreWorker) {
+if (typeof PDFJSDev !== 'undefined' && PDFJSDev.test('FIREFOX || MOZCENTRAL')) {
+  throw new Error('Module "pdfjs/core/network" shall not ' +
+                  'be used with FIREFOX or MOZCENTRAL build.');
+}
 
-//#if (FIREFOX || MOZCENTRAL)
-//
-//Components.utils.import('resource://gre/modules/Services.jsm');
-//
-//var EXPORTED_SYMBOLS = ['NetworkManager'];
-//
-//var console = {
-//  log: function console_log(aMsg) {
-//    var msg = 'network.js: ' + (aMsg.join ? aMsg.join('') : aMsg);
-//    Services.console.logStringMessage(msg);
-//    // TODO(mack): dump() doesn't seem to work here...
-//    dump(msg + '\n');
-//  }
-//}
-//#endif
-
-var NetworkManager = (function NetworkManagerClosure() {
+  var globalScope = sharedUtil.globalScope;
 
   var OK_RESPONSE = 200;
   var PARTIAL_CONTENT_RESPONSE = 206;
@@ -69,8 +65,9 @@ var NetworkManager = (function NetworkManagerClosure() {
     return array.buffer;
   }
 
-//#if !(CHROME || FIREFOX || MOZCENTRAL)
-  var supportsMozChunked = (function supportsMozChunkedClosure() {
+  var supportsMozChunked =
+    typeof PDFJSDev !== 'undefined' && PDFJSDev.test('CHROME') ? false :
+      (function supportsMozChunkedClosure() {
     try {
       var x = new XMLHttpRequest();
       // Firefox 37- required .open() to be called before setting responseType.
@@ -79,20 +76,19 @@ var NetworkManager = (function NetworkManagerClosure() {
       // blocked, e.g. via the connect-src CSP directive or the NoScript addon.
       // When this error occurs, this feature detection method will mistakenly
       // report that moz-chunked-arraybuffer is not supported in Firefox 37-.
-      x.open('GET', 'https://example.com');
+      x.open('GET', globalScope.location.href);
       x.responseType = 'moz-chunked-arraybuffer';
       return x.responseType === 'moz-chunked-arraybuffer';
     } catch (e) {
       return false;
     }
   })();
-//#endif
 
   NetworkManager.prototype = {
     requestRange: function NetworkManager_requestRange(begin, end, listeners) {
       var args = {
-        begin: begin,
-        end: end
+        begin,
+        end,
       };
       for (var prop in listeners) {
         args[prop] = listeners[prop];
@@ -108,7 +104,7 @@ var NetworkManager = (function NetworkManagerClosure() {
       var xhr = this.getXhr();
       var xhrId = this.currXhrId++;
       var pendingRequest = this.pendingRequests[xhrId] = {
-        xhr: xhr
+        xhr,
       };
 
       xhr.open('GET', this.url);
@@ -128,15 +124,7 @@ var NetworkManager = (function NetworkManagerClosure() {
         pendingRequest.expectedStatus = 200;
       }
 
-//#if CHROME
-//    var useMozChunkedLoading = false;
-//#endif
-//#if (FIREFOX || MOZCENTRAL)
-//    var useMozChunkedLoading = !!args.onProgressiveData;
-//#endif
-//#if !(CHROME || FIREFOX || MOZCENTRAL)
       var useMozChunkedLoading = supportsMozChunked && !!args.onProgressiveData;
-//#endif
       if (useMozChunkedLoading) {
         xhr.responseType = 'moz-chunked-arraybuffer';
         pendingRequest.onProgressiveData = args.onProgressiveData;
@@ -238,15 +226,15 @@ var NetworkManager = (function NetworkManagerClosure() {
         var matches = /bytes (\d+)-(\d+)\/(\d+)/.exec(rangeHeader);
         var begin = parseInt(matches[1], 10);
         pendingRequest.onDone({
-          begin: begin,
-          chunk: chunk
+          begin,
+          chunk,
         });
       } else if (pendingRequest.onProgressiveData) {
         pendingRequest.onDone(null);
       } else if (chunk) {
         pendingRequest.onDone({
           begin: 0,
-          chunk: chunk
+          chunk,
         });
       } else if (pendingRequest.onError) {
         pendingRequest.onError(xhr.status);
@@ -288,22 +276,6 @@ var NetworkManager = (function NetworkManagerClosure() {
       xhr.abort();
     }
   };
-
-  return NetworkManager;
-})();
-
-//#if !(FIREFOX || MOZCENTRAL)
-(function (root, factory) {
-  if (typeof define === 'function' && define.amd) {
-    define('pdfjs/core/network', ['exports', 'pdfjs/shared/util',
-      'pdfjs/core/worker'], factory);
-  } else if (typeof exports !== 'undefined') {
-    factory(exports, require('../shared/util.js'), require('./worker.js'));
-  } else {
-    factory((root.pdfjsCoreNetwork = {}), root.pdfjsSharedUtil,
-      root.pdfjsCoreWorker);
-  }
-}(this, function (exports, sharedUtil, coreWorker) {
 
   var assert = sharedUtil.assert;
   var createPromiseCapability = sharedUtil.createPromiseCapability;
@@ -402,6 +374,9 @@ var NetworkManager = (function NetworkManagerClosure() {
       }
 
       var networkManager = this._manager;
+      if (!networkManager.isHttp) {
+        return false;
+      }
       var fullRequestXhrId = this._fullRequestId;
       var fullRequestXhr = networkManager.getRequestXhr(fullRequestXhrId);
       if (fullRequestXhr.getResponseHeader('Accept-Ranges') !== 'bytes') {
@@ -638,4 +613,3 @@ var NetworkManager = (function NetworkManagerClosure() {
   exports.PDFNetworkStream = PDFNetworkStream;
   exports.NetworkManager = NetworkManager;
 }));
-//#endif

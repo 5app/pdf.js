@@ -13,101 +13,81 @@
  * limitations under the License.
  */
 
-'use strict';
-
-(function (root, factory) {
-  if (typeof define === 'function' && define.amd) {
-    define('pdfjs-web/hand_tool', ['exports', 'pdfjs-web/grab_to_pan',
-      'pdfjs-web/preferences'], factory);
-  } else if (typeof exports !== 'undefined') {
-    factory(exports, require('./grab_to_pan.js'), require('./preferences.js'));
-  } else {
-    factory((root.pdfjsWebHandTool = {}), root.pdfjsWebGrabToPan,
-      root.pdfjsWebPreferences);
-  }
-}(this, function (exports, grabToPan, preferences) {
-
-var GrabToPan = grabToPan.GrabToPan;
-var Preferences = preferences.Preferences;
+import { GrabToPan } from './grab_to_pan';
+import { localized } from './ui_utils';
 
 /**
  * @typedef {Object} HandToolOptions
  * @property {HTMLDivElement} container - The document container.
  * @property {EventBus} eventBus - The application event bus.
+ * @property {BasePreferences} preferences - Object for reading/writing
+ *                                           persistent settings.
  */
 
-/**
- * @class
- */
-var HandTool = (function HandToolClosure() {
+class HandTool {
   /**
-   * @constructs HandTool
    * @param {HandToolOptions} options
    */
-  function HandTool(options) {
-    this.container = options.container;
-    this.eventBus = options.eventBus;
+  constructor({ container, eventBus, preferences, }) {
+    this.container = container;
+    this.eventBus = eventBus;
 
     this.wasActive = false;
 
     this.handTool = new GrabToPan({
       element: this.container,
-      onActiveChanged: function(isActive) {
-        this.eventBus.dispatch('handtoolchanged', {isActive: isActive});
-      }.bind(this)
+      onActiveChanged: (isActive) => {
+        this.eventBus.dispatch('handtoolchanged', { isActive, });
+      },
     });
 
     this.eventBus.on('togglehandtool', this.toggle.bind(this));
 
-    this.eventBus.on('localized', function (e) {
-      Preferences.get('enableHandToolOnLoad').then(function resolved(value) {
-        if (value) {
-          this.handTool.activate();
-        }
-      }.bind(this), function rejected(reason) {});
-    }.bind(this));
+    let enableOnLoad = preferences.get('enableHandToolOnLoad');
+    Promise.all([localized, enableOnLoad]).then((values) => {
+      if (values[1] === true) {
+        this.handTool.activate();
+      }
+    }).catch(function(reason) {});
 
-    this.eventBus.on('presentationmodechanged', function (e) {
-      if (e.switchInProgress) {
+    this.eventBus.on('presentationmodechanged', (evt) => {
+      if (evt.switchInProgress) {
         return;
       }
-      if (e.active) {
+      if (evt.active) {
         this.enterPresentationMode();
       } else {
         this.exitPresentationMode();
       }
-    }.bind(this));
+    });
   }
 
-  HandTool.prototype = {
-    /**
-     * @return {boolean}
-     */
-    get isActive() {
-      return !!this.handTool.active;
-    },
+  /**
+   * @return {boolean}
+   */
+  get isActive() {
+    return !!this.handTool.active;
+  }
 
-    toggle: function HandTool_toggle() {
-      this.handTool.toggle();
-    },
+  toggle() {
+    this.handTool.toggle();
+  }
 
-    enterPresentationMode: function HandTool_enterPresentationMode() {
-      if (this.isActive) {
-        this.wasActive = true;
-        this.handTool.deactivate();
-      }
-    },
-
-    exitPresentationMode: function HandTool_exitPresentationMode() {
-      if (this.wasActive) {
-        this.wasActive = false;
-        this.handTool.activate();
-      }
+  enterPresentationMode() {
+    if (this.isActive) {
+      this.wasActive = true;
+      this.handTool.deactivate();
     }
-  };
+  }
 
-  return HandTool;
-})();
+  exitPresentationMode() {
+    if (this.wasActive) {
+      this.wasActive = false;
+      this.handTool.activate();
+    }
+  }
+}
 
-exports.HandTool = HandTool;
-}));
+export {
+  HandTool,
+};

@@ -53,9 +53,8 @@ var PDFImage = (function PDFImageClosure() {
   function handleImageData(image, nativeDecoder) {
     if (nativeDecoder && nativeDecoder.canDecode(image)) {
       return nativeDecoder.decode(image);
-    } else {
-      return Promise.resolve(image);
     }
+    return Promise.resolve(image);
   }
 
   /**
@@ -281,7 +280,7 @@ var PDFImage = (function PDFImageClosure() {
       }
     }
 
-    return {data: data, width: width, height: height};
+    return { data, width, height, };
   };
 
   PDFImage.prototype = {

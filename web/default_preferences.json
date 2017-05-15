@@ -11,5 +11,10 @@
   "disableFontFace": false,
   "disableTextLayer": false,
   "useOnlyCssZoom": false,
-  "externalLinkTarget": 0
+  "externalLinkTarget": 0,
+  "enhanceTextSelection": false,
+  "renderer": "canvas",
+  "renderInteractiveForms": false,
+  "enablePrintAutoRotate": false,
+  "disablePageLabels": false
 }

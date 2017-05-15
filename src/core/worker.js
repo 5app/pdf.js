@@ -12,7 +12,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/* globals NetworkManager, module */
 
 'use strict';
 
@@ -36,21 +35,19 @@ var MessageHandler = sharedUtil.MessageHandler;
 var MissingPDFException = sharedUtil.MissingPDFException;
 var UnexpectedResponseException = sharedUtil.UnexpectedResponseException;
 var PasswordException = sharedUtil.PasswordException;
-var PasswordResponses = sharedUtil.PasswordResponses;
 var UnknownErrorException = sharedUtil.UnknownErrorException;
 var XRefParseException = sharedUtil.XRefParseException;
 var arrayByteLength = sharedUtil.arrayByteLength;
 var arraysToBytes = sharedUtil.arraysToBytes;
 var assert = sharedUtil.assert;
 var createPromiseCapability = sharedUtil.createPromiseCapability;
-var error = sharedUtil.error;
 var info = sharedUtil.info;
 var warn = sharedUtil.warn;
 var setVerbosityLevel = sharedUtil.setVerbosityLevel;
+var isNodeJS = sharedUtil.isNodeJS;
 var Ref = corePrimitives.Ref;
 var LocalPdfManager = corePdfManager.LocalPdfManager;
 var NetworkPdfManager = corePdfManager.NetworkPdfManager;
-var globalScope = sharedUtil.globalScope;
 
 var WorkerTask = (function WorkerTaskClosure() {
   function WorkerTask(name) {
@@ -64,15 +61,15 @@ var WorkerTask = (function WorkerTaskClosure() {
       return this._capability.promise;
     },
 
-    finish: function () {
+    finish() {
       this._capability.resolve();
     },
 
-    terminate: function () {
+    terminate() {
       this.terminated = true;
     },
 
-    ensureNotTerminated: function () {
+    ensureNotTerminated() {
       if (this.terminated) {
         throw new Error('Worker task was terminated');
       }
@@ -82,20 +79,22 @@ var WorkerTask = (function WorkerTaskClosure() {
   return WorkerTask;
 })();
 
-//#if !PRODUCTION
+if (typeof PDFJSDev === 'undefined' || !PDFJSDev.test('PRODUCTION')) {
 /**
  * Interface that represents PDF data transport. If possible, it allows
  * progressively load entire or fragment of the PDF binary data.
  *
  * @interface
- * */
-function IPDFStream() {}
+ */
+function IPDFStream() {} // eslint-disable-line no-inner-declarations
 IPDFStream.prototype = {
   /**
    * Gets a reader for the entire PDF data.
    * @returns {IPDFStreamReader}
    */
-  getFullReader: function () { return null; },
+  getFullReader() {
+    return null;
+  },
 
   /**
    * Gets a reader for the range of the PDF data.
@@ -103,13 +102,15 @@ IPDFStream.prototype = {
    * @param {number} end - the end offset of the data.
    * @returns {IPDFStreamRangeReader}
    */
-  getRangeReader: function (begin, end) { return null; },
+  getRangeReader(begin, end) {
+    return null;
+  },
 
   /**
    * Cancels all opened reader and closes all their opened requests.
    * @param {Object} reason - the reason for cancelling
    */
-  cancelAllRequests: function (reason) {},
+  cancelAllRequests(reason) {},
 };
 
 /**
@@ -117,21 +118,25 @@ IPDFStream.prototype = {
  *
  * @interface
  */
-function IPDFStreamReader() {}
+function IPDFStreamReader() {} // eslint-disable-line no-inner-declarations
 IPDFStreamReader.prototype = {
   /**
    * Gets a promise that is resolved when the headers and other metadata of
    * the PDF data stream are available.
    * @returns {Promise}
    */
-  get headersReady() { return null; },
+  get headersReady() {
+    return null;
+  },
 
   /**
    * Gets PDF binary data length. It is defined after the headersReady promise
    * is resolved.
    * @returns {number} The data length (or 0 if unknown).
    */
-  get contentLength() { return 0; },
+  get contentLength() {
+    return 0;
+  },
 
   /**
    * Gets ability of the stream to handle range requests. It is defined after
@@ -139,14 +144,18 @@ IPDFStreamReader.prototype = {
    * or an error occurs.
    * @returns {boolean}
    */
-  get isRangeSupported() { return false; },
+  get isRangeSupported() {
+    return false;
+  },
 
   /**
    * Gets ability of the stream to progressively load binary data. It is defined
    * after the headersReady promise is resolved.
    * @returns {boolean}
    */
-  get isStreamingSupported() { return false; },
+  get isStreamingSupported() {
+    return false;
+  },
 
   /**
    * Requests a chunk of the binary data. The method returns the promise, which
@@ -156,13 +165,13 @@ IPDFStreamReader.prototype = {
    * set to true.
    * @returns {Promise}
    */
-  read: function () {},
+  read() {},
 
   /**
    * Cancels all pending read requests and closes the stream.
    * @param {Object} reason
    */
-  cancel: function (reason) {},
+  cancel(reason) {},
 
   /**
    * Sets or gets the progress callback. The callback can be useful when the
@@ -178,13 +187,15 @@ IPDFStreamReader.prototype = {
  *
  * @interface
  */
-function IPDFStreamRangeReader() {}
+function IPDFStreamRangeReader() {} // eslint-disable-line no-inner-declarations
 IPDFStreamRangeReader.prototype = {
   /**
    * Gets ability of the stream to progressively load binary data.
    * @returns {boolean}
    */
-  get isStreamingSupported() { return false; },
+  get isStreamingSupported() {
+    return false;
+  },
 
   /**
    * Requests a chunk of the binary data. The method returns the promise, which
@@ -194,13 +205,13 @@ IPDFStreamRangeReader.prototype = {
    * set to true.
    * @returns {Promise}
    */
-  read: function () {},
+  read() {},
 
   /**
    * Cancels all pending read requests and closes the stream.
    * @param {Object} reason
    */
-  cancel: function (reason) {},
+  cancel(reason) {},
 
   /**
    * Sets or gets the progress callback. The callback can be useful when the
@@ -210,7 +221,7 @@ IPDFStreamRangeReader.prototype = {
    */
   onProgress: null,
 };
-//#endif
+}
 
 /** @implements {IPDFStream} */
 var PDFWorkerStream = (function PDFWorkerStreamClosure() {
@@ -278,7 +289,7 @@ var PDFWorkerStream = (function PDFWorkerStreamClosure() {
 
     getRangeReader: function PDFWorkerStream_getRangeReader(begin, end) {
       var reader = new PDFWorkerStreamRangeReader(this, begin, end);
-      this._msgHandler.send('RequestDataRange', { begin: begin, end: end });
+      this._msgHandler.send('RequestDataRange', { begin, end, });
       this._rangeReaders.push(reader);
       return reader;
     },
@@ -427,7 +438,7 @@ function setPDFNetworkStreamClass(cls) {
 }
 
 var WorkerMessageHandler = {
-  setup: function wphSetup(handler, port) {
+  setup(handler, port) {
     var testMessageProcessed = false;
     handler.on('test', function wphSetupTest(data) {
       if (testMessageProcessed) {
@@ -448,7 +459,7 @@ var WorkerMessageHandler = {
       var responseExists = 'response' in xhr;
       // check if the property is actually implemented
       try {
-        var dummy = xhr.responseType;
+        xhr.responseType; // eslint-disable-line no-unused-expressions
       } catch (e) {
         responseExists = false;
       }
@@ -458,7 +469,7 @@ var WorkerMessageHandler = {
       }
       handler.send('test', {
         supportTypedArray: true,
-        supportTransfers: supportTransfers
+        supportTransfers,
       });
     });
 
@@ -470,7 +481,7 @@ var WorkerMessageHandler = {
       return WorkerMessageHandler.createDocumentHandler(data, port);
     });
   },
-  createDocumentHandler: function wphCreateDocumentHandler(docParams, port) {
+  createDocumentHandler(docParams, port) {
     // This context is actually holds references on pdfManager and handler,
     // until the latter is destroyed.
     var pdfManager;
@@ -479,6 +490,7 @@ var WorkerMessageHandler = {
     var WorkerTasks = [];
 
     var docId = docParams.docId;
+    var docBaseUrl = docParams.docBaseUrl;
     var workerHandlerName = docParams.docId + '_worker';
     var handler = new MessageHandler(workerHandlerName, docId, port);
 
@@ -543,7 +555,7 @@ var WorkerMessageHandler = {
       if (source.data) {
         try {
           pdfManager = new LocalPdfManager(docId, source.data, source.password,
-                                           evaluatorOptions);
+                                           evaluatorOptions, docBaseUrl);
           pdfManagerCapability.resolve(pdfManager);
         } catch (ex) {
           pdfManagerCapability.reject(ex);
@@ -590,9 +602,9 @@ var WorkerMessageHandler = {
           url: source.url,
           password: source.password,
           length: fullRequest.contentLength,
-          disableAutoFetch: disableAutoFetch,
+          disableAutoFetch,
           rangeChunkSize: source.rangeChunkSize
-        }, evaluatorOptions);
+        }, evaluatorOptions, docBaseUrl);
         pdfManagerCapability.resolve(pdfManager);
         cancelXHRs = null;
       }).catch(function (reason) {
@@ -609,7 +621,7 @@ var WorkerMessageHandler = {
         // the data is array, instantiating directly from it
         try {
           pdfManager = new LocalPdfManager(docId, pdfFile, source.password,
-                                           evaluatorOptions);
+                                           evaluatorOptions, docBaseUrl);
           pdfManagerCapability.resolve(pdfManager);
         } catch (ex) {
           pdfManagerCapability.reject(ex);
@@ -632,7 +644,7 @@ var WorkerMessageHandler = {
             loaded += arrayByteLength(data);
             if (!fullRequest.isStreamingSupported) {
               handler.send('DocProgress', {
-                loaded: loaded,
+                loaded,
                 total: Math.max(loaded, fullRequest.contentLength || 0)
               });
             }
@@ -662,19 +674,25 @@ var WorkerMessageHandler = {
       return pdfManagerCapability.promise;
     }
 
-    var setupDoc = function(data) {
-      var onSuccess = function(doc) {
+    function setupDoc(data) {
+      function onSuccess(doc) {
         ensureNotTerminated();
         handler.send('GetDoc', { pdfInfo: doc });
-      };
+      }
 
-      var onFailure = function(e) {
+      function onFailure(e) {
         if (e instanceof PasswordException) {
-          if (e.code === PasswordResponses.NEED_PASSWORD) {
-            handler.send('NeedPassword', e);
-          } else if (e.code === PasswordResponses.INCORRECT_PASSWORD) {
-            handler.send('IncorrectPassword', e);
-          }
+          var task = new WorkerTask('PasswordException: response ' + e.code);
+          startWorkerTask(task);
+
+          handler.sendWithPromise('PasswordRequest', e).then(function (data) {
+            finishWorkerTask(task);
+            pdfManager.updatePassword(data.password);
+            pdfManagerReady();
+          }).catch(function (ex) {
+            finishWorkerTask(task);
+            handler.send('PasswordException', ex);
+          }.bind(null, e));
         } else if (e instanceof InvalidPDFException) {
           handler.send('InvalidPDF', e);
         } else if (e instanceof MissingPDFException) {
@@ -685,19 +703,36 @@ var WorkerMessageHandler = {
           handler.send('UnknownError',
                        new UnknownErrorException(e.message, e.toString()));
         }
-      };
+      }
+
+      function pdfManagerReady() {
+        ensureNotTerminated();
+
+        loadDocument(false).then(onSuccess, function loadFailure(ex) {
+          ensureNotTerminated();
+
+          // Try again with recoveryMode == true
+          if (!(ex instanceof XRefParseException)) {
+            onFailure(ex);
+            return;
+          }
+          pdfManager.requestLoadedStream();
+          pdfManager.onLoadedStream().then(function() {
+            ensureNotTerminated();
+
+            loadDocument(true).then(onSuccess, onFailure);
+          });
+        }, onFailure);
+      }
 
       ensureNotTerminated();
 
-      var cMapOptions = {
-        url: data.cMapUrl === undefined ? null : data.cMapUrl,
-        packed: data.cMapPacked === true
-      };
       var evaluatorOptions = {
         forceDataSchema: data.disableCreateObjectURL,
         maxImageSize: data.maxImageSize === undefined ? -1 : data.maxImageSize,
         disableFontFace: data.disableFontFace,
-        cMapOptions: cMapOptions
+        nativeImageDecoderSupport: data.nativeImageDecoderSupport,
+        ignoreErrors: data.ignoreErrors,
       };
 
       getPdfManager(data, evaluatorOptions).then(function (newPdfManager) {
@@ -713,46 +748,24 @@ var WorkerMessageHandler = {
         pdfManager.onLoadedStream().then(function(stream) {
           handler.send('DataLoaded', { length: stream.bytes.byteLength });
         });
-      }).then(function pdfManagerReady() {
-        ensureNotTerminated();
-
-        loadDocument(false).then(onSuccess, function loadFailure(ex) {
-          ensureNotTerminated();
-
-          // Try again with recoveryMode == true
-          if (!(ex instanceof XRefParseException)) {
-            if (ex instanceof PasswordException) {
-              // after password exception prepare to receive a new password
-              // to repeat loading
-              pdfManager.passwordChanged().then(pdfManagerReady);
-            }
-
-            onFailure(ex);
-            return;
-          }
-
-          pdfManager.requestLoadedStream();
-          pdfManager.onLoadedStream().then(function() {
-            ensureNotTerminated();
-
-            loadDocument(true).then(onSuccess, onFailure);
-          });
-        }, onFailure);
-      }, onFailure);
-    };
+      }).then(pdfManagerReady, onFailure);
+    }
 
     handler.on('GetPage', function wphSetupGetPage(data) {
       return pdfManager.getPage(data.pageIndex).then(function(page) {
         var rotatePromise = pdfManager.ensure(page, 'rotate');
         var refPromise = pdfManager.ensure(page, 'ref');
+        var userUnitPromise = pdfManager.ensure(page, 'userUnit');
         var viewPromise = pdfManager.ensure(page, 'view');
 
-        return Promise.all([rotatePromise, refPromise, viewPromise]).then(
-            function(results) {
+        return Promise.all([
+          rotatePromise, refPromise, userUnitPromise, viewPromise
+        ]).then(function(results) {
           return {
             rotate: results[0],
             ref: results[1],
-            view: results[2]
+            userUnit: results[2],
+            view: results[3]
           };
         });
       });
@@ -820,10 +833,6 @@ var WorkerMessageHandler = {
       }
     );
 
-    handler.on('UpdatePassword', function wphSetupUpdatePassword(data) {
-      pdfManager.updatePassword(data);
-    });
-
     handler.on('GetAnnotations', function wphSetupGetAnnotations(data) {
       return pdfManager.getPage(data.pageIndex).then(function(page) {
         return pdfManager.ensure(page, 'getAnnotationsData', [data.intent]);
@@ -839,8 +848,12 @@ var WorkerMessageHandler = {
         var pageNum = pageIndex + 1;
         var start = Date.now();
         // Pre compile the pdf page and fetch the fonts/images.
-        page.getOperatorList(handler, task, data.intent).then(
-            function(operatorList) {
+        page.getOperatorList({
+          handler,
+          task,
+          intent: data.intent,
+          renderInteractiveForms: data.renderInteractiveForms,
+        }).then(function(operatorList) {
           finishWorkerTask(task);
 
           info('page=' + pageNum + ' - getOperatorList: time=' +
@@ -880,7 +893,7 @@ var WorkerMessageHandler = {
           }
 
           handler.send('PageError', {
-            pageNum: pageNum,
+            pageNum,
             error: wrappedException,
             intent: data.intent
           });
@@ -890,15 +903,20 @@ var WorkerMessageHandler = {
 
     handler.on('GetTextContent', function wphExtractText(data) {
       var pageIndex = data.pageIndex;
-      var normalizeWhitespace = data.normalizeWhitespace;
       return pdfManager.getPage(pageIndex).then(function(page) {
         var task = new WorkerTask('GetTextContent: page ' + pageIndex);
         startWorkerTask(task);
+
         var pageNum = pageIndex + 1;
         var start = Date.now();
-        return page.extractTextContent(task, normalizeWhitespace).then(
-            function(textContent) {
+        return page.extractTextContent({
+          handler,
+          task,
+          normalizeWhitespace: data.normalizeWhitespace,
+          combineTextItems: data.combineTextItems,
+        }).then(function(textContent) {
           finishWorkerTask(task);
+
           info('text indexing: page=' + pageNum + ' - time=' +
                (Date.now() - start) + 'ms');
           return textContent;
@@ -945,60 +963,23 @@ var WorkerMessageHandler = {
       docParams = null; // we don't need docParams anymore -- saving memory.
     });
     return workerHandlerName;
-  }
+  },
+  initializeFromPort(port) {
+    var handler = new MessageHandler('worker', 'main', port);
+    WorkerMessageHandler.setup(handler, port);
+    handler.send('ready', null);
+  },
 };
 
-function initializeWorker() {
-//#if !MOZCENTRAL
-  if (!('console' in globalScope)) {
-    var consoleTimer = {};
-
-    var workerConsole = {
-      log: function log() {
-        var args = Array.prototype.slice.call(arguments);
-        globalScope.postMessage({
-          targetName: 'main',
-          action: 'console_log',
-          data: args
-        });
-      },
-
-      error: function error() {
-        var args = Array.prototype.slice.call(arguments);
-        globalScope.postMessage({
-          targetName: 'main',
-          action: 'console_error',
-          data: args
-        });
-        throw 'pdf.js execution error';
-      },
-
-      time: function time(name) {
-        consoleTimer[name] = Date.now();
-      },
-
-      timeEnd: function timeEnd(name) {
-        var time = consoleTimer[name];
-        if (!time) {
-          error('Unknown timer name ' + name);
-        }
-        this.log('Timer:', name, Date.now() - time);
-      }
-    };
-
-    globalScope.console = workerConsole;
-  }
-//#endif
-
-  var handler = new MessageHandler('worker', 'main', self);
-  WorkerMessageHandler.setup(handler, self);
-  handler.send('ready', null);
+function isMessagePort(maybePort) {
+  return typeof maybePort.postMessage === 'function' &&
+         ('onmessage' in maybePort);
 }
 
 // Worker thread (and not node.js)?
-if (typeof window === 'undefined' &&
-    !(typeof module !== 'undefined' && module.require)) {
-  initializeWorker();
+if (typeof window === 'undefined' && !isNodeJS() &&
+    typeof self !== 'undefined' && isMessagePort(self)) {
+  WorkerMessageHandler.initializeFromPort(self);
 }
 
 exports.setPDFNetworkStreamClass = setPDFNetworkStreamClass;
