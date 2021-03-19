@@ -22,7 +22,7 @@ var DEFAULT_URL = 'compressed.tracemonkey-pldi-09.pdf';
   var pdfjsWebLibs = {
     pdfjsWebPDFJS: window.pdfjsDistBuildPdf
   };
-  
+
   (function () {
 
 
@@ -1084,7 +1084,7 @@ exports.PDFRenderingQueue = PDFRenderingQueue;
   "enableHandToolOnLoad": false,
   "enableWebGL": false,
   "pdfBugEnabled": false,
-  "disableRange": false,
+  "disableRange": true,
   "disableStream": false,
   "disableAutoFetch": false,
   "disableFontFace": false,
